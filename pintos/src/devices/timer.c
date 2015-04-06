@@ -25,6 +25,7 @@ static int64_t ticks;
 static unsigned loops_per_tick;
 
 static intr_handler_func timer_interrupt;
+static void wakeUpThread(struct thread* thread, void* aux); //min add
 static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
@@ -92,11 +93,37 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON); //make sure interrupts are on
+/*
   while (timer_elapsed (start) < ticks) 
     thread_yield ();
+*/
+  struct thread* cur = thread_current(); //grab current thread to put sleep to
+  cur->sleepTickAmount = ticks; //set total amount of ticks that need to be ticked
 
+  enum intr_level saveLevel = intr_disable(); //disable interrupts for blocking and save old level
+  thread_block();
 
-  //FIXME: CONTINUE: wait list is ready to use
+  intr_set_level(saveLevel); //restores the interrupt level after thread gets unblocked
+  							 // in wakeUpThread() function
+
+/*
+  //FIXME: lines below Min add
+  struct thread* cur = thread_current(); //grab current thread to put sleep to
+  struct list_elem* waitElem = list_remove(&cur->elem); //pop it from list
+  
+  list_push_back(&wait_list, waitElem); //push to wait list
+  cur->status = THREAD_BLOCKED; //block the thread
+
+  while(timer_elapsed(start) < ticks)
+    thread_yield();
+
+  struct thread* newcur = thread_current(); //get the current thread where you stopped in
+  newcur->status = THREAD_READY; //set it to ready from running
+  cur->status = THREAD_RUNNING; //set the sleeping thread to running
+
+  waitElem = list_remove(&cur->waitelem); //pop it from wait list
+  list_push_front(&ready_list, waitElem); //push it to the ready list
+*/
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -175,6 +202,25 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+
+  //for each tick, decrement the sleep tick counter, 
+  // and when it reaches 0, unblock
+  thread_foreach(&wakeUpThread, 0);
+}
+
+//min add
+// wakes up thread from sleeping
+static void
+wakeUpThread(struct thread* thread, void* aux)
+{
+  if(thread->status == THREAD_BLOCKED) //only do it for blocked threads
+  	if(thread->sleepTickAmount > 0) //decrementing downards to 0
+	{
+	  --thread->sleepTickAmount;
+	  if(thread->sleepTickAmount == 0) //if countdown finished, you can unblock
+	  	thread_unblock(thread);
+	}
+  	
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
