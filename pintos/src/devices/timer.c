@@ -30,6 +30,12 @@ static bool too_many_loops (unsigned loops);
 static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
+static void thread_foreachWait (thread_action_func* func, void* aux); //min add
+static struct list wait_list; //min add
+static bool MY_COMPARATOR_FUNCTION(const struct list_elem*, 
+								   const struct list_elem*,
+								   void*); //min add
+
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
@@ -38,6 +44,10 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+  
+  //min add
+  //initialize wait list
+  list_init(&wait_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -90,18 +100,27 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  if(ticks > 0)
+  {
+printf("TICKS: %"PRId64"\n", ticks);
+    int64_t start = timer_ticks ();
 
-  ASSERT (intr_get_level () == INTR_ON); //make sure interrupts are on
+    ASSERT (intr_get_level () == INTR_ON); //make sure interrupts are on
 
-  struct thread* cur = thread_current(); //grab current thread to put sleep to
-  cur->sleepTickAmount = ticks; //set total amount of ticks that need to be ticked
+    struct thread* cur = thread_current(); //grab current thread to put sleep to
+    cur->wakeTime = start + ticks; //set the time to wake up
 
-  enum intr_level saveLevel = intr_disable(); //disable interrupts for blocking and save old level
-  thread_block();
+	//insert to waitlist in priority order
+    list_insert_ordered(&wait_list, &cur->waitelem, MY_COMPARATOR_FUNCTION, NULL);
 
-  intr_set_level(saveLevel); //restores the interrupt level after thread gets unblocked
-  							 // in wakeUpThread() function
+	enum intr_level saveLevel = intr_disable(); //disable interrupts for blocking and 
+												// save old level
+
+	thread_block();
+
+    intr_set_level(saveLevel); //restores the interrupt level after thread gets unblocked
+  							   // in wakeUpThread() function
+  }
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -181,9 +200,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
-  //for each tick, decrement the sleep tick counter, 
-  // and when it reaches 0, unblock
-  thread_foreach(&wakeUpThread, 0);
+  //for each tick, check the wake time of all threads in waitlist
+  // if time to wake up, unblock
+  thread_foreachWait(wakeUpThread, 0);
 }
 
 //min add
@@ -191,14 +210,16 @@ timer_interrupt (struct intr_frame *args UNUSED)
 static void
 wakeUpThread(struct thread* thread, void* aux)
 {
-  if(thread->status == THREAD_BLOCKED) //only do it for blocked threads
-  	if(thread->sleepTickAmount > 0) //decrementing downards to 0
-	{
-	  --thread->sleepTickAmount;
-	  if(thread->sleepTickAmount == 0) //if countdown finished, you can unblock
-	  	thread_unblock(thread);
-	}
-  	
+  int64_t currentTicks = timer_ticks();
+  printf("%" PRId64 " %" PRId64"\n", currentTicks, thread->wakeTime);
+
+  //if(thread->status == THREAD_BLOCKED) //only do it for blocked threads
+  if(currentTicks == thread->wakeTime) //if it's time to wake up
+  {
+	printf("wake Time\n");
+	list_remove(&thread->waitelem); //remove it from waitlist
+	thread_unblock(thread);
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
@@ -271,3 +292,37 @@ real_time_delay (int64_t num, int32_t denom)
   ASSERT (denom % 1000 == 0);
   busy_wait (loops_per_tick * num / 1000 * TIMER_FREQ / (denom / 1000)); 
 }
+
+//min add
+// iterate through all threads in waitlist
+// function must be called with interrupts disabled
+static void
+thread_foreachWait (thread_action_func* func, void* aux)
+{
+  struct list_elem* e;
+
+  ASSERT(intr_get_level() == INTR_OFF);
+
+  for(e = list_begin(&wait_list); e != list_end(&wait_list); e = list_next(e))
+  {
+    struct thread* t = list_entry(e, struct thread, waitelem);
+	func(t, aux);
+  }
+}
+
+//Comparator function template
+////Used to explain to the code how one element in the list is greater than the other
+////MUST FOLLOW THIS PARAMETER AND RETURN VALUE LAYOUT!!!
+static bool
+MY_COMPARATOR_FUNCTION (const struct list_elem *a,
+                        const struct list_elem *b,
+						void *aux UNUSED) 
+{
+  //FIXME
+  return &list_entry(a, struct thread, wait_list)->priority
+  		 < &list_entry(b, struct thread, wait_list)->priority;
+}
+
+
+
+
