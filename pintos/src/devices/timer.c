@@ -93,10 +93,7 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON); //make sure interrupts are on
-/*
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
-*/
+
   struct thread* cur = thread_current(); //grab current thread to put sleep to
   cur->sleepTickAmount = ticks; //set total amount of ticks that need to be ticked
 
@@ -105,25 +102,6 @@ timer_sleep (int64_t ticks)
 
   intr_set_level(saveLevel); //restores the interrupt level after thread gets unblocked
   							 // in wakeUpThread() function
-
-/*
-  //FIXME: lines below Min add
-  struct thread* cur = thread_current(); //grab current thread to put sleep to
-  struct list_elem* waitElem = list_remove(&cur->elem); //pop it from list
-  
-  list_push_back(&wait_list, waitElem); //push to wait list
-  cur->status = THREAD_BLOCKED; //block the thread
-
-  while(timer_elapsed(start) < ticks)
-    thread_yield();
-
-  struct thread* newcur = thread_current(); //get the current thread where you stopped in
-  newcur->status = THREAD_READY; //set it to ready from running
-  cur->status = THREAD_RUNNING; //set the sleeping thread to running
-
-  waitElem = list_remove(&cur->waitelem); //pop it from wait list
-  list_push_front(&ready_list, waitElem); //push it to the ready list
-*/
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
