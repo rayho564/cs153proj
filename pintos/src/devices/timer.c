@@ -35,6 +35,8 @@ static struct list wait_list; //min add
 static bool MY_COMPARATOR_FUNCTION(const struct list_elem*, 
 								   const struct list_elem*,
 								   void*); //min add
+//for debugging purposes
+static void printWaitList(void);
 
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
@@ -100,27 +102,23 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  if(ticks > 0)
-  {
-printf("TICKS: %"PRId64"\n", ticks);
-    int64_t start = timer_ticks ();
+//printf("TICKS: %"PRId64"\n", ticks);
+  int64_t start = timer_ticks ();
 
-    ASSERT (intr_get_level () == INTR_ON); //make sure interrupts are on
+  ASSERT (intr_get_level () == INTR_ON); //make sure interrupts are on
 
-    struct thread* cur = thread_current(); //grab current thread to put sleep to
-    cur->wakeTime = start + ticks; //set the time to wake up
+  struct thread* cur = thread_current(); //grab current thread to put sleep to
+  cur->wakeTime = start + ticks; //set the time to wake up
 
-	//insert to waitlist in priority order
-    list_insert_ordered(&wait_list, &cur->waitelem, MY_COMPARATOR_FUNCTION, NULL);
+  //insert to waitlist in priority order
+  list_insert_ordered(&wait_list, &cur->waitelem, MY_COMPARATOR_FUNCTION, NULL);
 
-	enum intr_level saveLevel = intr_disable(); //disable interrupts for blocking and 
-												// save old level
+  enum intr_level saveLevel = intr_disable(); //disable interrupts for blocking and 
+											  // save old level
+  thread_block();
 
-	thread_block();
-
-    intr_set_level(saveLevel); //restores the interrupt level after thread gets unblocked
-  							   // in wakeUpThread() function
-  }
+  intr_set_level(saveLevel); //restores the interrupt level after thread gets unblocked
+  							 // in wakeUpThread() function
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -211,12 +209,12 @@ static void
 wakeUpThread(struct thread* thread, void* aux)
 {
   int64_t currentTicks = timer_ticks();
-  printf("%" PRId64 " %" PRId64"\n", currentTicks, thread->wakeTime);
+  //printf("%" PRId64 " %" PRId64"\n", currentTicks, thread->wakeTime);
 
   //if(thread->status == THREAD_BLOCKED) //only do it for blocked threads
-  if(currentTicks == thread->wakeTime) //if it's time to wake up
+  if(currentTicks >= thread->wakeTime) //if it's time to wake up >= covers 0 and neg case
   {
-	printf("wake Time\n");
+	//printf("wake Time\n");
 	list_remove(&thread->waitelem); //remove it from waitlist
 	thread_unblock(thread);
   }
@@ -318,10 +316,24 @@ MY_COMPARATOR_FUNCTION (const struct list_elem *a,
                         const struct list_elem *b,
 						void *aux UNUSED) 
 {
-  //FIXME
-  return &list_entry(a, struct thread, wait_list)->priority
-  		 < &list_entry(b, struct thread, wait_list)->priority;
+  return list_entry(a, struct thread, waitelem)->priority
+  	   > list_entry(b, struct thread, waitelem)->priority;
 }
+
+//prints waitlist's priority in order
+static void
+printWaitList(void)
+{
+  struct list_elem* e;
+  for(e = list_begin(&wait_list); e != list_end(&wait_list); e = list_next(e))
+  {
+    struct thread* t = list_entry(e, struct thread, waitelem);
+	int priority = t->priority;
+	printf("%i", priority);
+  }
+}
+
+
 
 
 
