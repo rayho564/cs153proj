@@ -9,7 +9,7 @@
 >> Fill in the names and email addresses of your group members.
 
 Min Kang <mkang015@ucr.edu> <861047191>
-FirstName LastName <email@domain.example> <SID>
+Raymond Ho <rho002@ucr.edu> <861061153>
 
 ---- PRELIMINARIES ----
 
@@ -29,10 +29,27 @@ FirstName LastName <email@domain.example> <SID>
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+//In timer.c (Added)
+//  It holds all the waiting threads
+static struct list wait_list;
+
+//In thread.h (Added)
+//  It is a container for wait_list for this current thread object
+struct list_elem waitelem;
+
+//In thread.h (Added)
+//  It is wake up time for this thread to wake up
+int64_t wakeTime;
+
 ---- ALGORITHMS ----
 
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
+In the call to timer_sleep(), we store start time(tick) which we added it 
+ with timer_sleeps parameter int64_t ticks to store to thread object's
+ wake up time called wakeTime in the struct thread.
+ In timer_interrupt, for every tick, we check all elements in wait list 
+ and unblock those threads that are ready to wake up.
 
 >> A3: What steps are taken to minimize the amount of time spent in
 >> the timer interrupt handler?
